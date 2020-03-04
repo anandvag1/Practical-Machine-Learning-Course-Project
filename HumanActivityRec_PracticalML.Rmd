@@ -1,0 +1,123 @@
+---
+title: "Practical ML course - Human Activity Recognition"
+author: "Anand Agrawal"
+date: "29/02/2020"
+output: html_document
+---
+
+# Background
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset).
+
+Participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions:   
+* exactly according to the specification (Class A)  
+* throwing the elbows to the front (Class B)  
+* lifting the dumbbell only halfway (Class C)  
+* lowering the dumbbell only halfway (Class D)  
+* throwing the hips to the front (Class E)  
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes
+
+## Pre-processing
+
+We will set the seed, load the training, testing data and check the dimensions of training data. 
+
+```{r load, include=TRUE, cache=TRUE, echo=TRUE}
+set.seed(123)
+
+pml_training <- read.csv("pml-training.csv")
+pml_testing <- read.csv("pml-testing.csv")
+dim(pml_training)
+```
+
+There are lot of variables which have NA values, we will create a logical list containing the variables which doesn't have any NAs and use that to discard other variabled.
+First we remove the variables which have NAs in training data set
+
+```{r removeNA_train, include=TRUE, cache=TRUE, echo=TRUE}
+train_colsNA <- sapply(pml_training, function(x) all(!is.na(x)))
+pml_training <- pml_training[, train_colsNA]
+pml_testing <- pml_testing[,train_colsNA]
+```
+
+Below code do the same to remove the variables for which we have NAs in testing data.
+```{r removeNA_test, include=TRUE, cache=TRUE, echo=TRUE}
+test_colsNA <- sapply(pml_testing  , function(x) all(!is.na(x)))
+pml_training <- pml_training[,test_colsNA]
+pml_testing <- pml_testing[,test_colsNA]
+```
+
+Below are first 7 variables which we will not use for fitting the mode and so removing them from dataset.
+```{r remove7, include=TRUE, cache=TRUE, echo=TRUE}
+colnames(pml_training)[1:7]
+
+pml_training <- pml_training[,8:60]
+pml_testing <- pml_testing[,8:60]
+```
+
+Below is the final dimension for training which contains a output varaible classe.
+```{r dim, include=TRUE, cache=TRUE, echo=TRUE}
+dim(pml_training)
+```
+
+## Model fitting
+
+Here we will use randome forest apporach and use caret package for training the model.
+Random forest have two important parameters which impacts accuracy - number of trees in the forest and number of variables at each split.
+
+For varaibles to split (mtry) we will train the model with 6 to 15 splits.
+This will be input the train method of caret.
+
+```{r tuning, include=TRUE , echo=TRUE, message=FALSE}
+library(caret)
+tunegrid <- expand.grid(.mtry=(6:15))
+```
+
+To check the model fit and out of sample error we will do 10 fold cross validation which can also be input to train method.
+Below we specified to perfomr cross validation with 10 fold.
+
+```{r control, include=TRUE,  echo=TRUE}
+control <- trainControl(method="cv", number=10 )
+```
+
+Below we run a loop to create three different model for number of trees in forest (ntree).
+Forests of 5, 10 and 15 trees will be created and accuracy will be checked on cross validation set.
+
+```{r model_fitting, include=TRUE, cache=TRUE, echo=TRUE}
+modellist <- list()
+for (trees in c(5,10,15)){
+  mdl <- train (classe ~ .,
+                data = pml_training, 
+                method="rf", 
+                tuneGrid=tunegrid, 
+                trControl = control, 
+                ntree=trees)
+  key <- trees
+  modellist[[key]] <- mdl
+}
+```
+
+## Checking best model
+
+In this section we will plot the accuracy of three models and check which is the best model to use for prediction on testing set.
+A new data frame is created with results from all three models and ggplot is used to plot the data
+
+```{r plot, echo=TRUE}
+library(ggplot2)
+results <- rbind(data.frame(ntrees=5, modellist[[5]]$results), data.frame(ntrees=10, modellist[[10]]$results), data.frame(ntrees=15, modellist[[15]]$results))
+ggplot(aes(x=mtry, y = Accuracy), data = results) + geom_line( aes(color=as.factor(ntrees)))
+```
+
+We see that the model with 5 tress have least accuracy and model with 15 tress in random forest has best performance.
+
+## Predicting on test set
+
+We will use random forest model with 15 trees to predict on testing set.
+
+```{r predict, echo=TRUE}
+predict(modellist[[15]], pml_testing)
+```
+
